@@ -24,6 +24,7 @@ export const resolveConfig = (flags: CliFlags): AppConfig => {
   const model = flags.model ?? env.model ?? configFile?.llm?.model ?? defaults.model;
   const temperature = flags.temperature ?? env.temperature ?? configFile?.llm?.temperature ?? defaults.temperature;
   const baseUrl = flags.baseUrl ?? env.baseUrl ?? configFile?.llm?.baseUrl ?? defaults.baseUrl;
+  const mode = flags.mode ?? configFile?.audit?.mode ?? "quick";
   const cliOrConfigApiKey = flags.apiKey ?? configFile?.llm?.apiKey ?? null;
   const apiKey = cliOrConfigApiKey ?? resolveApiKeyFromEnv(provider);
 
@@ -33,7 +34,7 @@ export const resolveConfig = (flags: CliFlags): AppConfig => {
     );
   }
 
-  if (provider !== "ollama" && !apiKey) {
+  if (mode === "full" && provider !== "ollama" && !apiKey) {
     const envKeys = defaults.apiKeyEnv;
     throw new ConfigError(
       `No API key found for provider "${provider}". Provide via:\n` +
@@ -43,8 +44,6 @@ export const resolveConfig = (flags: CliFlags): AppConfig => {
       { provider, requiredEnvVars: envKeys },
     );
   }
-
-  const mode = flags.mode ?? configFile?.audit?.mode ?? "quick";
   const format = flags.format ?? configFile?.audit?.format ?? "table";
 
   const llm: LlmConfig = {
