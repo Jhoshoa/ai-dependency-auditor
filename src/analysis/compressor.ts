@@ -2,6 +2,8 @@ import { type Advisory, type Severity } from "../types/advisory";
 import type { LlmClient } from "../llm/openai-client";
 import { getSystemPrompt } from "../llm/prompts";
 
+const BATCH_SIZE = 20;
+
 export interface CompressedAdvisory {
   readonly cveId: string;
   readonly severity: Severity;
@@ -15,11 +17,19 @@ export interface CompressionResult {
   readonly totalInput: number;
 }
 
+export interface BatchInfo {
+  readonly batchIndex: number;
+  readonly totalBatches: number;
+  readonly inputCount: number;
+  readonly outputCount: number;
+}
+
 export interface CompressionStats {
   readonly inputCount: number;
   readonly outputCount: number;
   readonly removedCount: number;
   readonly durationMs: number;
+  readonly batches?: readonly BatchInfo[];
 }
 
 const VALID_SEVERITIES = new Set<Severity>(["CRITICAL", "HIGH", "MEDIUM", "LOW", "NONE"]);
@@ -79,6 +89,37 @@ const fallbackResult = (advisories: readonly Advisory[]): CompressionResult => (
   totalInput: advisories.length,
 });
 
+const processBatch = async (
+  client: LlmClient,
+  batch: readonly Advisory[],
+  batchIndex: number,
+): Promise<{ advisories: CompressedAdvisory[]; removedCount: number; outputCount: number }> => {
+  const userPrompt = formatAdvisoriesForPrompt(batch);
+  let content: string;
+  try {
+    const response = await client.callLlm(getSystemPrompt("compression"), userPrompt, "json");
+    content = response.content;
+  } catch {
+    const fallback = fallbackResult(batch);
+    return {
+      advisories: [...fallback.advisories],
+      removedCount: fallback.removedCount,
+      outputCount: fallback.advisories.length,
+    };
+  }
+
+  const { advisories: compressed, removedCount } = parseCompressedResponse(content, batch.length);
+  return { advisories: compressed, removedCount, outputCount: compressed.length };
+};
+
+const chunkArray = <T>(arr: readonly T[], size: number): T[][] => {
+  const chunks: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) {
+    chunks.push(arr.slice(i, i + size));
+  }
+  return chunks;
+};
+
 export const compressAdvisories = async (
   client: LlmClient,
   advisories: readonly Advisory[],
@@ -93,24 +134,55 @@ export const compressAdvisories = async (
     };
   }
 
-  const userPrompt = formatAdvisoriesForPrompt(advisories);
+  if (totalInput <= BATCH_SIZE) {
+    const userPrompt = formatAdvisoriesForPrompt(advisories);
 
-  let content: string;
-  try {
-    const response = await client.callLlm(getSystemPrompt("compression"), userPrompt, "json");
-    content = response.content;
-  } catch {
+    let content: string;
+    try {
+      const response = await client.callLlm(getSystemPrompt("compression"), userPrompt, "json");
+      content = response.content;
+    } catch {
+      return {
+        result: fallbackResult(advisories),
+        stats: { inputCount: totalInput, outputCount: totalInput, removedCount: 0, durationMs: Date.now() - startTime },
+      };
+    }
+
+    const { advisories: compressed, removedCount } = parseCompressedResponse(content, totalInput);
+    const outputCount = compressed.length;
+
     return {
-      result: fallbackResult(advisories),
-      stats: { inputCount: totalInput, outputCount: totalInput, removedCount: 0, durationMs: Date.now() - startTime },
+      result: { advisories: compressed, removedCount, totalInput },
+      stats: { inputCount: totalInput, outputCount, removedCount, durationMs: Date.now() - startTime },
     };
   }
 
-  const { advisories: compressed, removedCount } = parseCompressedResponse(content, totalInput);
-  const outputCount = compressed.length;
+  const batches = chunkArray(advisories, BATCH_SIZE);
+  const allCompressed: CompressedAdvisory[] = [];
+  let totalRemoved = 0;
+  const batchesInfo: BatchInfo[] = [];
+
+  for (let i = 0; i < batches.length; i++) {
+    const batch = batches[i];
+    const { advisories: batchResult, removedCount, outputCount } = await processBatch(client, batch, i);
+    allCompressed.push(...batchResult);
+    totalRemoved += removedCount;
+    batchesInfo.push({
+      batchIndex: i,
+      totalBatches: batches.length,
+      inputCount: batch.length,
+      outputCount,
+    });
+  }
 
   return {
-    result: { advisories: compressed, removedCount, totalInput },
-    stats: { inputCount: totalInput, outputCount, removedCount, durationMs: Date.now() - startTime },
+    result: { advisories: allCompressed, removedCount: totalRemoved, totalInput },
+    stats: {
+      inputCount: totalInput,
+      outputCount: allCompressed.length,
+      removedCount: totalRemoved,
+      durationMs: Date.now() - startTime,
+      batches: batchesInfo,
+    },
   };
 };

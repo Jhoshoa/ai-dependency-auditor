@@ -4,6 +4,7 @@ import { queryOsv } from "./osv-api";
 import { DependencyCache } from "../cache";
 import { ScannerError } from "../utils/errors";
 import { fileExists } from "../utils/file";
+import type { Logger } from "../logger";
 import type { ParsedProject, Dependency } from "../types/dependency";
 import type { Advisory, AdvisoryBundle } from "../types/advisory";
 import type { AuditMode } from "../types/config";
@@ -13,6 +14,7 @@ interface ScanOptions {
   readonly projectPath: string;
   readonly offline?: boolean;
   readonly cacheTtlHours?: number;
+  readonly logger?: Logger;
 }
 
 interface ScanResult {
@@ -25,9 +27,9 @@ interface ScanResult {
 
 export const scanProject = async (options: ScanOptions): Promise<ScanResult> => {
   const startTime = Date.now();
-  const { projectPath, mode, offline = false, cacheTtlHours } = options;
+  const { projectPath, mode, offline = false, cacheTtlHours, logger } = options;
 
-  const project = await parseProject(projectPath);
+  const project = await parseProject(projectPath, logger);
   const deps = getDependenciesWithLockfileVersions(project);
 
   if (deps.length === 0) {

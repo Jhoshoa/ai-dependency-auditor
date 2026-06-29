@@ -53,3 +53,19 @@ export const detectLockfile = (projectPath: string): { type: "npm" | "yarn" | "p
 
   return { type: "none", path: null };
 };
+
+export const detectMultipleLockfiles = (projectPath: string): Array<{ type: "npm" | "yarn" | "pnpm"; path: string }> => {
+  const found: Array<{ type: "npm" | "yarn" | "pnpm"; path: string }> = [];
+  const candidates = [
+    { type: "npm" as const, file: "package-lock.json" },
+    { type: "yarn" as const, file: "yarn.lock" },
+    { type: "pnpm" as const, file: "pnpm-lock.yaml" },
+  ];
+  for (const candidate of candidates) {
+    const fullPath = `${projectPath}/${candidate.file}`;
+    if (fileExists(fullPath)) {
+      found.push({ type: candidate.type, path: fullPath });
+    }
+  }
+  return found;
+};

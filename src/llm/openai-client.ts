@@ -1,3 +1,4 @@
+import { setTimeout as sleep } from "node:timers/promises";
 import OpenAI from "openai";
 import type { LlmConfig } from "../types/config";
 import { LlmError, ConfigError } from "../utils/errors";
@@ -21,6 +22,39 @@ export interface LlmClient {
 
 const TIMEOUT_MS = 30_000;
 const MAX_RETRIES = 3;
+const RETRY_BASE_MS = 1000;
+const RETRY_MAX_MS = 30_000;
+
+const isTransientError = (err: unknown): boolean => {
+  if (err instanceof LlmError) return false;
+  const status = (err as { status?: number }).status;
+  if (status === 429) return true;
+  if (status !== undefined && status >= 500 && status < 600) return true;
+  const message = err instanceof Error ? err.message : String(err);
+  if (message.includes("rate limit") || message.includes("Rate limit")) return true;
+  if (message.includes("overloaded") || message.includes("service unavailable")) return true;
+  if (message.includes("Too Many Requests") || message.includes("too many requests")) return true;
+  if (message.includes("Internal Server Error") || message.includes("internal error")) return true;
+  return false;
+};
+
+const retryWithBackoff = async <T>(
+  fn: () => Promise<T>,
+  attempt = 0,
+): Promise<T> => {
+  try {
+    return await fn();
+  } catch (err) {
+    if (attempt >= MAX_RETRIES || !isTransientError(err)) throw err;
+
+    const delay = Math.min(
+      RETRY_BASE_MS * 2 ** attempt + Math.random() * 1000,
+      RETRY_MAX_MS,
+    );
+    await sleep(delay);
+    return retryWithBackoff(fn, attempt + 1);
+  }
+};
 
 export const createOpenAiClient = (config: LlmConfig): LlmClient => {
   if (!config.apiKey && config.provider !== "ollama") {
@@ -33,7 +67,7 @@ export const createOpenAiClient = (config: LlmConfig): LlmClient => {
     apiKey: config.apiKey ?? "ollama-no-key",
     baseURL: config.baseUrl,
     timeout: TIMEOUT_MS,
-    maxRetries: MAX_RETRIES,
+    maxRetries: 0,
   });
 
   const model = config.model;
@@ -45,7 +79,7 @@ export const createOpenAiClient = (config: LlmConfig): LlmClient => {
   ): Promise<LlmClientResponse> => {
     const startTime = Date.now();
 
-    try {
+    const execute = async (): Promise<LlmClientResponse> => {
       const response = await client.chat.completions.create({
         model,
         messages: [
@@ -81,12 +115,16 @@ export const createOpenAiClient = (config: LlmConfig): LlmClient => {
         },
         durationMs: Date.now() - startTime,
       };
+    };
+
+    try {
+      return await retryWithBackoff(execute);
     } catch (err) {
       if (err instanceof LlmError) throw err;
 
       const message = err instanceof Error ? err.message : String(err);
 
-      if (message.includes("timeout") || message.includes("TIMEOUT")) {
+      if (message.includes("timeout") || message.includes("TIMEOUT") || message.includes("aborted")) {
         throw new LlmError(`Provider timeout after ${TIMEOUT_MS}ms`, {
           provider: config.provider,
           model,
@@ -95,10 +133,11 @@ export const createOpenAiClient = (config: LlmConfig): LlmClient => {
       }
 
       const statusCode = (err as { status?: number }).status;
-      throw new LlmError(`Provider error: ${message}`, {
+      throw new LlmError(`Provider error after ${MAX_RETRIES + 1} attempts: ${message}`, {
         provider: config.provider,
         model,
         statusCode,
+        retries: MAX_RETRIES,
       });
     }
   };

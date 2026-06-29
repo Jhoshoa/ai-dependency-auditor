@@ -67,12 +67,42 @@ const mapOsvSeverity = (vuln: OsvVulnerability): Advisory["severity"] => {
   return "NONE";
 };
 
-const parseOsvResponse = (response: OsvQueryResponse, packageName: string): Advisory[] => {
+const PRIVATE_PACKAGE_PATTERN = /^@.+\/.+/;
+
+const isPrivatePackage = (name: string): boolean =>
+  PRIVATE_PACKAGE_PATTERN.test(name) &&
+  !name.startsWith("@angular/") &&
+  !name.startsWith("@types/") &&
+  !name.startsWith("@babel/") &&
+  !name.startsWith("@nestjs/") &&
+  !name.startsWith("@vue/") &&
+  !name.startsWith("@testing-library/");
+
+const isWithdrawn = (vuln: OsvVulnerability): boolean => {
+  if (!vuln.affected) return false;
+  for (const affected of vuln.affected) {
+    if (affected.ranges) {
+      for (const range of affected.ranges) {
+        if (range.type === "ECOSYSTEM" && range.events) {
+          for (const event of range.events) {
+            if ("fixed" in event && event.fixed?.startsWith("0")) {
+              return true;
+            }
+          }
+        }
+      }
+    }
+  }
+  return false;
+};
+
+const parseOsvResponse = (response: OsvQueryResponse, packageName: string, includeWithdrawn = false): Advisory[] => {
   const vulns = response.vulns;
   if (!vulns) return [];
 
   return vulns
     .filter((vuln) => vuln.id)
+    .filter((vuln) => includeWithdrawn || !isWithdrawn(vuln))
     .map((vuln) => {
       const affected = vuln.affected?.find(
         (a) => a.package?.name === packageName,
@@ -143,6 +173,24 @@ export const queryOsv = async (
   const seen = new Set<string>();
 
   for (const dep of deps) {
+    if (isPrivatePackage(dep.name)) {
+      allAdvisories.push({
+        id: `private-${dep.name}`,
+        cveId: null,
+        source: "osv-dev",
+        packageName: dep.name,
+        affectedVersion: dep.version,
+        fixVersion: null,
+        severity: "NONE",
+        title: `Private package: ${dep.name}`,
+        description: `This package (${dep.name}) appears to be a private/scoped package not available in the public npm registry. Manual verification is recommended.`,
+        vulnerableFunctions: [],
+        references: [],
+        publishedAt: null,
+      });
+      continue;
+    }
+
     if (cache) {
       const cached = offline
         ? cache.getStale(dep.name, dep.version)

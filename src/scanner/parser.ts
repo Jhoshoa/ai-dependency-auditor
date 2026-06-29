@@ -1,7 +1,8 @@
 import { join, resolve } from "node:path";
-import { readJsonFile, detectLockfile, fileExists } from "../utils/file";
+import { readJsonFile, detectLockfile, detectMultipleLockfiles, fileExists } from "../utils/file";
 import { ScannerError } from "../utils/errors";
 import type { Dependency, ParsedProject, LockfileData } from "../types/dependency";
+import type { Logger } from "../logger";
 
 interface PackageJson {
   readonly name?: string;
@@ -40,7 +41,10 @@ const extractDepsFromPackageJson = (pkg: PackageJson): Dependency[] => {
   return deps;
 };
 
-export const parseProject = async (projectPath: string): Promise<ParsedProject> => {
+export const parseProject = async (
+  projectPath: string,
+  logger?: Logger,
+): Promise<ParsedProject> => {
   const resolvedPath = resolve(projectPath);
   const packageJsonPath = join(resolvedPath, "package.json");
 
@@ -56,27 +60,52 @@ export const parseProject = async (projectPath: string): Promise<ParsedProject> 
   const dependencies = extractDepsFromPackageJson(pkg);
   const lockfileInfo = detectLockfile(resolvedPath);
 
+  const multipleLockfiles = detectMultipleLockfiles(resolvedPath);
+  if (multipleLockfiles.length > 1) {
+    const types = multipleLockfiles.map((l) => l.type).join(", ");
+    logger?.warn({
+      event: "multiple-lockfiles",
+      types,
+      primary: lockfileInfo.type,
+      message: `Multiple lockfiles detected (${types}). Using ${lockfileInfo.type} as primary.`,
+    });
+  }
+
   let lockfileData: LockfileData;
 
   if (lockfileInfo.type === "npm" && lockfileInfo.path) {
-    const lockPkg = await readJsonFile<NpmLockfile>(lockfileInfo.path);
-    const packages = new Map<string, string>();
+    try {
+      const lockPkg = await readJsonFile<NpmLockfile>(lockfileInfo.path);
+      const packages = new Map<string, string>();
 
-    if (lockPkg.packages) {
-      for (const [pkgName, pkgData] of Object.entries(lockPkg.packages)) {
-        if (pkgName === "") continue;
-        const cleanName = pkgName.replace(/^node_modules\//, "");
-        if (pkgData.version) {
-          packages.set(cleanName, pkgData.version);
+      if (lockPkg.packages) {
+        for (const [pkgName, pkgData] of Object.entries(lockPkg.packages)) {
+          if (pkgName === "") continue;
+          const cleanName = pkgName.replace(/^node_modules\//, "");
+          if (pkgData.version) {
+            packages.set(cleanName, pkgData.version);
+          }
         }
       }
-    }
 
-    lockfileData = {
-      type: "npm",
-      path: lockfileInfo.path,
-      packages,
-    };
+      lockfileData = {
+        type: "npm",
+        path: lockfileInfo.path,
+        packages,
+      };
+    } catch (err) {
+      logger?.warn({
+        event: "lockfile-corrupt",
+        path: lockfileInfo.path,
+        message: "Lockfile appears corrupt. Falling back to package.json only.",
+        error: err instanceof Error ? err.message : String(err),
+      });
+      lockfileData = {
+        type: "none",
+        path: lockfileInfo.path,
+        packages: new Map(),
+      };
+    }
   } else {
     lockfileData = {
       type: lockfileInfo.type,

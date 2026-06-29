@@ -129,7 +129,7 @@ export const runAudit = async (
   let projectName: string;
 
   try {
-    const scanResult = await scanProject({ mode: env.hasLockfile ? config.mode : "quick", projectPath });
+    const scanResult = await scanProject({ mode: env.hasLockfile ? config.mode : "quick", projectPath, logger });
     advisories = scanResult.advisories;
     dependencies = scanResult.dependencies;
     sourcesUsed = scanResult.sourcesUsed;
