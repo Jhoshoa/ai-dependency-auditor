@@ -110,21 +110,21 @@ const log = (
   if (typeof msgOrObj === "string") {
     let message = msgOrObj;
     message = sanitizeString(message);
-    const extra = args.length > 0 ? " " + JSON.stringify(sanitizeArgs(args)) : "";
-    process.stderr.write(`${fullPrefix} ${message}${extra}\n`);
+    if (args.length > 0) {
+      const sanitizedArgs = args.map((arg) => {
+        if (arg !== null && typeof arg === "object" && !Array.isArray(arg)) {
+          return sanitize(arg as Record<string, unknown>);
+        }
+        if (typeof arg === "string") return sanitizeString(arg);
+        return arg;
+      });
+      message += " " + JSON.stringify(sanitizedArgs);
+    }
+    process.stderr.write(`${fullPrefix} ${message}\n`);
   } else {
     process.stderr.write(`${fullPrefix} ${JSON.stringify(sanitize(msgOrObj))}\n`);
   }
 };
-
-const sanitizeArgs = (args: unknown[]): unknown[] =>
-  args.map((arg) => {
-    if (arg !== null && typeof arg === "object" && !Array.isArray(arg)) {
-      return sanitize(arg as Record<string, unknown>);
-    }
-    if (typeof arg === "string") return sanitizeString(arg);
-    return arg;
-  });
 
 export const createLogger = (name: string, minLevel: LogLevel = "info"): Logger => {
   const prefix = `${PREFIX}:${name}`;

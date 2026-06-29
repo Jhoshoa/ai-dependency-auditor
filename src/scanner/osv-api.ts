@@ -109,8 +109,8 @@ const parseOsvResponse = (response: OsvQueryResponse, packageName: string, inclu
       );
 
       const fixEvent = affected?.ranges
-        ?.find((r) => r.type === "SEMVER")
-        ?.events?.find((e: { readonly fixed?: string }) => e.fixed);
+        ?.find((r) => r.type === "ECOSYSTEM" || r.type === "SEMVER")
+        ?.events?.find((e): e is { readonly fixed: string } => "fixed" in e && typeof e.fixed === "string");
 
       const cveId = vuln.aliases?.find((a) => a.startsWith("CVE-")) ?? null;
 

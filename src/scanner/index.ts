@@ -59,10 +59,8 @@ export const scanProject = async (options: ScanOptions): Promise<ScanResult> => 
   }
 
   if (mode === "full") {
-    const cache =
-      (offline || cacheTtlHours === undefined || cacheTtlHours > 0)
-        ? new DependencyCache(undefined, cacheTtlHours)
-        : undefined;
+    const needsCache = offline || cacheTtlHours === undefined || cacheTtlHours > 0;
+    const cache = needsCache ? new DependencyCache(undefined, cacheTtlHours) : undefined;
     try {
       const osvBundle = await queryOsv(deps, { offline, cache });
       if (osvBundle.advisories.length > 0) {
