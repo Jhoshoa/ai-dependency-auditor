@@ -1,6 +1,7 @@
 import { parseProject, getDependenciesWithLockfileVersions } from "./parser";
 import { runNpmAudit } from "./npm-audit";
 import { queryOsv } from "./osv-api";
+import { DependencyCache } from "../cache";
 import { ScannerError } from "../utils/errors";
 import { fileExists } from "../utils/file";
 import type { ParsedProject, Dependency } from "../types/dependency";
@@ -10,6 +11,8 @@ import type { AuditMode } from "../types/config";
 interface ScanOptions {
   readonly mode: AuditMode;
   readonly projectPath: string;
+  readonly offline?: boolean;
+  readonly cacheTtlHours?: number;
 }
 
 interface ScanResult {
@@ -22,7 +25,7 @@ interface ScanResult {
 
 export const scanProject = async (options: ScanOptions): Promise<ScanResult> => {
   const startTime = Date.now();
-  const { projectPath, mode } = options;
+  const { projectPath, mode, offline = false, cacheTtlHours } = options;
 
   const project = await parseProject(projectPath);
   const deps = getDependenciesWithLockfileVersions(project);
@@ -39,7 +42,6 @@ export const scanProject = async (options: ScanOptions): Promise<ScanResult> => 
 
   const bundles: AdvisoryBundle[] = [];
   const sourcesUsed: string[] = [];
-
   const hasLockfile = project.lockfile.type !== "none";
 
   if (hasLockfile) {
@@ -55,11 +57,17 @@ export const scanProject = async (options: ScanOptions): Promise<ScanResult> => 
   }
 
   if (mode === "full") {
+    const cache =
+      (offline || cacheTtlHours === undefined || cacheTtlHours > 0)
+        ? new DependencyCache(undefined, cacheTtlHours)
+        : undefined;
     try {
-      const osvBundle = await queryOsv(deps);
+      const osvBundle = await queryOsv(deps, { offline, cache });
       if (osvBundle.advisories.length > 0) {
         bundles.push(osvBundle);
-        sourcesUsed.push("osv-dev");
+        sourcesUsed.push(offline ? "osv-dev:cache" : "osv-dev");
+      } else if (!offline) {
+        sourcesUsed.push("osv-dev:no-results");
       }
     } catch {
       sourcesUsed.push("osv-dev:failed");

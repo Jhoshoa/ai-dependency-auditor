@@ -1,6 +1,7 @@
 import { fetchWithRetry } from "../utils/network";
 import { NetworkError } from "../utils/errors";
 import type { Advisory, AdvisoryBundle } from "../types/advisory";
+import type { DependencyCache } from "../cache";
 
 interface OsvVulnerability {
   readonly id: string;
@@ -35,6 +36,11 @@ interface OsvBatchResponse {
   readonly results?: Array<{
     readonly vulns?: readonly OsvVulnerability[];
   }>;
+}
+
+interface OsvOptions {
+  readonly offline?: boolean;
+  readonly cache?: DependencyCache;
 }
 
 const OSV_API = "https://api.osv.dev/v1/querybatch";
@@ -95,8 +101,34 @@ const parseOsvResponse = (response: OsvQueryResponse, packageName: string): Advi
     });
 };
 
+const fetchOsvForDep = async (
+  dep: { name: string; version: string },
+): Promise<Advisory[]> => {
+  const response = await fetchWithRetry(
+    OSV_API,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        queries: [{
+          package: { name: dep.name, ecosystem: "npm" },
+        }],
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new NetworkError(`OSV API error: ${response.status}`, response.status);
+  }
+
+  const data = (await response.json()) as OsvBatchResponse;
+  const vulns = data.results?.[0]?.vulns ?? [];
+  return parseOsvResponse({ vulns }, dep.name);
+};
+
 export const queryOsv = async (
   deps: ReadonlyArray<{ name: string; version: string }>,
+  options?: OsvOptions,
 ): Promise<AdvisoryBundle> => {
   if (deps.length === 0) {
     return {
@@ -106,34 +138,51 @@ export const queryOsv = async (
     };
   }
 
+  const { offline = false, cache } = options ?? {};
   const allAdvisories: Advisory[] = [];
+  const seen = new Set<string>();
 
   for (const dep of deps) {
-    try {
-      const response = await fetchWithRetry(
-        OSV_API,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            queries: [{
-              package: { name: dep.name, ecosystem: "npm" },
-            }],
-          }),
-        },
-      );
-
-      if (!response.ok) {
-        throw new NetworkError(`OSV API error: ${response.status}`, response.status);
+    if (cache) {
+      const cached = offline
+        ? cache.getStale(dep.name, dep.version)
+        : cache.get(dep.name, dep.version);
+      if (cached) {
+        for (const a of cached) {
+          const key = `${a.packageName}-${a.id}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            allAdvisories.push(a);
+          }
+        }
+        continue;
       }
+    }
 
-      const data = (await response.json()) as OsvBatchResponse;
-      const vulns = data.results?.[0]?.vulns ?? [];
-      const advisories = parseOsvResponse({ vulns }, dep.name);
-      allAdvisories.push(...advisories);
-    } catch (err) {
-      if (err instanceof NetworkError && err.statusCode === 429) {
-        throw err;
+    if (offline) continue;
+
+    try {
+      const advisories = await fetchOsvForDep(dep);
+      if (cache) cache.set(dep.name, dep.version, advisories);
+      for (const a of advisories) {
+        const key = `${a.packageName}-${a.id}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          allAdvisories.push(a);
+        }
+      }
+    } catch {
+      if (cache) {
+        const stale = cache.getStale(dep.name, dep.version);
+        if (stale) {
+          for (const a of stale) {
+            const key = `${a.packageName}-${a.id}`;
+            if (!seen.has(key)) {
+              seen.add(key);
+              allAdvisories.push(a);
+            }
+          }
+        }
       }
     }
   }
