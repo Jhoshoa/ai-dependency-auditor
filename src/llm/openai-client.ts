@@ -1,5 +1,5 @@
 import { setTimeout as sleep } from "node:timers/promises";
-import OpenAI from "openai";
+import { OpenAI } from "openai";
 import type { LlmConfig } from "../types/config";
 import { LlmError, ConfigError } from "../utils/errors";
 
@@ -87,7 +87,7 @@ export const createOpenAiClient = (config: LlmConfig): LlmClient => {
           { role: "user", content: userPrompt },
         ],
         temperature: config.temperature,
-        max_tokens: config.maxTokens,
+        max_completion_tokens: config.maxTokens,
         response_format: responseFormat === "json" ? { type: "json_object" } : undefined,
       });
 

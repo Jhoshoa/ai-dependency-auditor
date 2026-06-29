@@ -39,14 +39,25 @@ const extractCve = (via: Array<string | { title?: string; cve?: string }> | unde
 };
 
 export const runNpmAudit = (cwd: string): AdvisoryBundle => {
+  let raw = "";
   try {
-    const raw = execSync("npm audit --json", {
+    raw = execSync("npm audit --json", {
       cwd,
       encoding: "utf-8",
       timeout: 30000,
       stdio: ["pipe", "pipe", "pipe"],
     });
+  } catch (execErr) {
+    const stderr = (execErr as { stderr?: string }).stderr ?? "";
+    raw = (execErr as { stdout?: string }).stdout ?? stderr;
+    if (!raw) {
+      throw new ScannerError("AUDIT_FAILED", "npm audit command failed", {
+        originalError: execErr instanceof Error ? execErr.message : String(execErr),
+      });
+    }
+  }
 
+  try {
     const parsed: NpmAuditResponse = JSON.parse(raw);
     const advisories: Advisory[] = [];
 

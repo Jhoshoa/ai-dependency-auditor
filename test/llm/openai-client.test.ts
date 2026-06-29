@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mockCreate = vi.fn();
 vi.mock("openai", () => ({
-  default: class MockOpenAi {
+  OpenAI: class MockOpenAi {
     readonly chat: { completions: { create: typeof mockCreate } };
     constructor(_config: Record<string, unknown>) {
       this.chat = {
