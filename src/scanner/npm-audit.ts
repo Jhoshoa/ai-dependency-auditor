@@ -27,6 +27,9 @@ const mapNpmSeverity = (severity: string): Advisory["severity"] => {
 const extractCve = (via: Array<string | { title?: string; cve?: string }> | undefined): string | null => {
   if (!via) return null;
   for (const entry of via) {
+    if (typeof entry === "string" && entry.startsWith("CVE-")) {
+      return entry;
+    }
     if (typeof entry === "object") {
       if (entry.cve) return entry.cve;
       if (entry.title?.startsWith("CVE-")) return entry.title;
