@@ -1,4 +1,12 @@
 export { scanProject } from "./scanner";
+export { resolveConfig } from "./config";
+export type { CliFlags } from "./config";
+export { compressAdvisories, analyzeSourceUsage } from "./analysis";
+export type { CompressedAdvisory, CompressionResult, CompressionStats, SourceFileInfo, SourceAnalysisResult } from "./analysis";
+export { runAudit } from "./agent";
+export type { AgentStep, AuditReport } from "./agent";
+export { createLlmClient } from "./llm";
+export type { LlmClient, LlmClientResponse } from "./llm";
 export type { ParsedProject, Dependency } from "./types/dependency";
 export type { Advisory, Severity } from "./types/advisory";
 export type { AnalysisResult, Report, RiskLevel, UsageStatus } from "./types/report";

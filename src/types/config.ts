@@ -27,6 +27,7 @@ export interface ProviderDefaults {
 export interface AppConfig {
   readonly llm: LlmConfig;
   readonly audit: AuditConfig;
+  readonly mode: AuditMode;
 }
 
 export type AuditMode = "full" | "quick";

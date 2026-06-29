@@ -3,8 +3,10 @@ import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { scanProject } from "./scanner";
+import { resolveConfig } from "./config";
+import type { CliFlags } from "./config";
 import { logger } from "./logger/trace";
-import { AuditError, ConfigError } from "./utils/errors";
+import { AuditError, ConfigError, LlmError } from "./utils/errors";
 import { fileExists } from "./utils/file";
 import type { Dependency } from "./types/dependency";
 import type { Advisory } from "./types/advisory";
@@ -38,28 +40,34 @@ program
   .option("--llm-provider <provider>", "LLM provider (openai, anthropic, gemini, ollama, azure, groq)")
   .option("--llm-model <model>", "LLM model name")
   .option("--api-key <key>", "LLM API key")
+  .option("--llm-base-url <url>", "LLM API base URL")
   .option("--temperature <value>", "LLM temperature (0.0 = deterministic)", Number)
   .option("--json", "Shortcut for --format=json")
   .action(async (path: string, options: Record<string, unknown>) => {
     try {
       const projectPath = path || ".";
-      const mode = (options.mode as string) || "quick";
-      const format = options.json ? "json" : (options.format as string) || "table";
-
-      if (!["quick", "full"].includes(mode)) {
-        console.error("Invalid mode. Use 'quick' or 'full'.");
-        process.exit(1);
-      }
 
       if (!fileExists(projectPath)) {
         console.error(`Path not found: ${projectPath}`);
         process.exit(1);
       }
 
-      logger.info({ event: "scan.start", path: projectPath, mode });
+      const flags: CliFlags = {
+        provider: (options.llmProvider as import("./types/config").LlmProvider) ?? null,
+        model: (options.llmModel as string) ?? null,
+        apiKey: (options.apiKey as string) ?? null,
+        baseUrl: (options.llmBaseUrl as string) ?? null,
+        temperature: options.temperature != null ? Number(options.temperature) : null,
+        mode: (options.mode as "quick" | "full") ?? null,
+        format: options.json ? "json" : ((options.format as "json" | "table" | "summary") ?? null),
+      };
+
+      const config = resolveConfig(flags);
+
+      logger.info({ event: "scan.start", path: projectPath, mode: config.mode, provider: config.llm.provider });
 
       const result = await scanProject({
-        mode: mode as "quick" | "full",
+        mode: config.mode,
         projectPath,
       });
 
@@ -69,11 +77,13 @@ program
         advisories: result.advisories.length,
         sources: result.sourcesUsed,
         durationMs: result.scanDurationMs,
+        provider: config.llm.provider,
+        model: config.llm.model,
       });
 
-      if (format === "json") {
+      if (config.audit.format === "json") {
         printJson(result);
-      } else if (format === "table") {
+      } else if (config.audit.format === "table") {
         await printTable(result);
       } else {
         printSummary(result);
@@ -86,6 +96,8 @@ program
     } catch (err) {
       if (err instanceof ConfigError) {
         logger.error({ event: "config.error", message: err.message });
+      } else if (err instanceof LlmError) {
+        logger.error({ event: "llm.error", message: err.message, code: err.code });
       } else if (err instanceof AuditError) {
         logger.error({ event: "audit.error", code: err.code, message: err.message });
       } else {
