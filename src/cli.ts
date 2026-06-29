@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveConfig } from "./config";
+import { writeDefaultConfig } from "./config/config-file";
 import type { CliFlags } from "./config";
 import { runAudit } from "./agent";
 import { formatOutput } from "./output";
@@ -49,6 +50,11 @@ program
       if (!fileExists(projectPath)) {
         console.error(`Path not found: ${projectPath}`);
         process.exit(1);
+      }
+
+      const configPath = writeDefaultConfig();
+      if (configPath) {
+        logger.info({ event: "config.created", path: configPath });
       }
 
       const flags: CliFlags = {

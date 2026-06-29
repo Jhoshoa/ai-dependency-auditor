@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
 import { resolve, dirname } from "node:path";
-import { mkdirSync, existsSync } from "node:fs";
+import { mkdirSync, existsSync, writeFileSync } from "node:fs";
 import { z } from "zod";
 import { readJsonFileSync } from "../utils/file";
 import { ConfigError } from "../utils/errors";
@@ -34,6 +34,30 @@ export const ensureConfigDir = (): void => {
   if (!existsSync(configDir)) {
     mkdirSync(configDir, { recursive: true });
   }
+};
+
+export const writeDefaultConfig = (): string => {
+  ensureConfigDir();
+  const configPath = getConfigFilePath();
+  if (existsSync(configPath)) return configPath;
+
+  const defaults: ConfigFileData = {
+    llm: {
+      provider: "openai",
+      model: "gpt-4o-mini",
+      temperature: 0.0,
+      maxTokens: 16384,
+    },
+    audit: {
+      mode: "quick",
+      format: "table",
+      cacheTtlHours: 24,
+      strictMode: false,
+    },
+  };
+
+  writeFileSync(configPath, JSON.stringify(defaults, null, 2), "utf-8");
+  return configPath;
 };
 
 export const readConfigFile = (): ConfigFileData | null => {

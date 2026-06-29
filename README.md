@@ -18,75 +18,75 @@ realmente afecta tu código.
 ## Instalación
 
 ```bash
-# Clonar el repositorio
-git clone <repo-url>
-cd ai-dependency-auditor
+# Instalar globalmente (recomendado)
+npm install -g ai-dependency-auditor
 
-# Instalar dependencias
-npm install
+# Verificar instalación
+dep-audit --version
 
-# (Opcional) Compilar para producción
-npm run build
+# Desinstalar
+npm uninstall -g ai-dependency-auditor
 ```
 
-## Uso rápido
+## Comandos
+
+Solo hay un comando principal:
+
+| Comando | Descripción |
+|---------|-------------|
+| `dep-audit check [path]` | Escanea un proyecto en busca de vulnerabilidades |
+
+Todos los flags de `check`:
+
+| Flag | Descripción | Default |
+|------|-------------|---------|
+| `-m, --mode <mode>` | Modo: `quick` (sin LLM) o `full` (con IA) | `quick` |
+| `-f, --format <format>` | Formato: `json`, `table`, `summary` | `table` |
+| `--llm-provider <provider>` | Provider: openai, anthropic, gemini, ollama, azure, groq | `openai` |
+| `--llm-model <model>` | Modelo específico (ej: gpt-4o-mini, claude-3-haiku) | — |
+| `--api-key <key>` | API key del provider | — |
+| `--llm-base-url <url>` | Base URL personalizada | — |
+| `--temperature <value>` | Temperatura del LLM (0.0 = deterministico) | `0.0` |
+| `--json` | Atajo para `--format=json` | — |
+| `-h, --help` | Muestra ayuda completa | — |
+
+Ver todos los flags:
 
 ```bash
-# Escaneo rápido (sin LLM)
-npx tsx src/cli.ts check ./ruta/al/proyecto
-
-# Escaneo completo con IA (requiere API key)
-export DEP_AUDIT_OPENAI_API_KEY="sk-..."
-npx tsx src/cli.ts check ./ruta/al/proyecto --mode full
+dep-audit check --help
 ```
 
-## Ejemplos
-
-### Escaneo del proyecto de prueba
+## Uso
 
 ```bash
-# V1: Quick audit — lista todos los CVEs
-npx tsx src/cli.ts check test/fixtures/vulnerable-project --mode quick
+# Escaneo rápido (sin LLM) — solo npm audit
+dep-audit check .
 
-# V2: Agentic audit — clasifica con IA
-DEP_AUDIT_OPENAI_API_KEY="sk-..." npx tsx src/cli.ts check test/fixtures/vulnerable-project --mode full
-```
+# Escaneo completo con IA
+dep-audit check . --mode full --api-key sk-...
 
-### Formato JSON (para CI/CD)
+# Formato JSON (para CI/CD)
+dep-audit check . --mode quick --format json
 
-```bash
-npx tsx src/cli.ts check ./ --mode quick --format json
-```
+# Usar Anthropic en vez de OpenAI
+dep-audit check . --mode full --llm-provider anthropic --api-key sk-ant-...
 
-### Usar otro provider
-
-```bash
-# Anthropic
-npx tsx src/cli.ts check ./ --mode full --llm-provider anthropic
-
-# Ollama (local)
-npx tsx src/cli.ts check ./ --mode full --llm-provider ollama --llm-model llama3.2
+# Ollama local (no requiere API key)
+dep-audit check . --mode full --llm-provider ollama --llm-model llama3.2
 
 # Azure
-npx tsx src/cli.ts check ./ --mode full --llm-provider azure --llm-base-url "https://<tu-recurso>.openai.azure.com"
+dep-audit check . --mode full --llm-provider azure --llm-base-url "https://tu-recurso.openai.azure.com" --api-key ...
+
+# Escanear otro proyecto
+dep-audit check ../mi-otro-proyecto
 ```
 
 ## Configuración
 
-### 1. Variables de entorno
+### 1. Auto-creación de config
 
-| Variable | Descripción |
-|---|---|
-| `DEP_AUDIT_OPENAI_API_KEY` | API key de OpenAI |
-| `DEP_AUDIT_ANTHROPIC_API_KEY` | API key de Anthropic |
-| `DEP_AUDIT_GOOGLE_API_KEY` | API key de Google Gemini |
-| `DEP_AUDIT_AZURE_API_KEY` | API key de Azure |
-| `DEP_AUDIT_GROQ_API_KEY` | API key de Groq |
-| `OPENAI_API_KEY` | Fallback para OpenAI |
-| `ANTHROPIC_API_KEY` | Fallback para Anthropic |
-| `GOOGLE_API_KEY` | Fallback para Gemini |
-
-### 2. Archivo de configuración (`~/.dep-audit/config.json`)
+La primera vez que ejecutes `dep-audit check`, se crea automáticamente
+`~/.dep-audit/config.json` con valores por defecto:
 
 ```json
 {
@@ -97,7 +97,7 @@ npx tsx src/cli.ts check ./ --mode full --llm-provider azure --llm-base-url "htt
     "maxTokens": 16384
   },
   "audit": {
-    "mode": "full",
+    "mode": "quick",
     "format": "table",
     "cacheTtlHours": 24,
     "strictMode": false
@@ -105,17 +105,29 @@ npx tsx src/cli.ts check ./ --mode full --llm-provider azure --llm-base-url "htt
 }
 ```
 
+Editalo para cambiar defaults sin usar flags cada vez.
+
+### 2. Variables de entorno
+
+| Variable | Descripción |
+|----------|-------------|
+| `DEP_AUDIT_OPENAI_API_KEY` | API key de OpenAI |
+| `DEP_AUDIT_ANTHROPIC_API_KEY` | API key de Anthropic |
+| `DEP_AUDIT_GOOGLE_API_KEY` | API key de Google Gemini |
+| `DEP_AUDIT_AZURE_API_KEY` | API key de Azure |
+| `DEP_AUDIT_GROQ_API_KEY` | API key de Groq |
+| `OPENAI_API_KEY` | Fallback para OpenAI |
+| `ANTHROPIC_API_KEY` | Fallback para Anthropic |
+| `GOOGLE_API_KEY` | Fallback para Gemini |
+
 ### 3. Flags CLI (mayor precedencia)
 
+Los flags CLI siempre ganan sobre config file y env vars.
+
+## Prioridad de configuración
+
 ```
-    --mode <mode>            Modo: quick | full
-    --format <format>        Formato: json | table | summary
-    --llm-provider <prov>    Provider LLM
-    --llm-model <model>      Modelo específico
-    --api-key <key>          API key
-    --llm-base-url <url>     Base URL personalizada
-    --temperature <value>    Temperatura (0.0-1.0)
-    --json                   Atajo para --format=json
+Flags CLI  >  Env vars  >  ~/.dep-audit/config.json  >  Defaults
 ```
 
 ## Arquitectura
@@ -145,6 +157,12 @@ npx tsx src/cli.ts check ./ --mode full --llm-provider azure --llm-base-url "htt
 ## Desarrollo
 
 ```bash
+# Clonar y compilar
+git clone <repo-url>
+cd ai-dependency-auditor
+npm install
+npm run build
+
 # Tests
 npm test
 
@@ -163,7 +181,7 @@ npm run test:coverage
 Ver `evidence/comparison.md` para el análisis detallado:
 
 | Aspecto | V1 (Quick) | V2 (Agentic) |
-|---|---|---|
+|---------|------------|---------------|
 | CVEs reportados | 15 sin filtrar | 3 reales, 8 FP, 4 unknown |
 | Severidad | Reportada (sin contexto) | Reclasificada por uso real |
 | Edge cases | 0 | 12 cubiertos |
