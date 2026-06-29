@@ -224,6 +224,7 @@ export const runAudit = async (
             advisory?.packageName ?? ca.cveId,
             [ca.vulnerableFunction],
             sourceFiles,
+            dep?.type,
           );
 
           results.push({

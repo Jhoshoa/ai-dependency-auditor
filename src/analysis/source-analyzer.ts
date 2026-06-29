@@ -62,6 +62,7 @@ export const analyzeSourceUsage = async (
   packageName: string,
   functionNames: readonly string[],
   sourceFiles: readonly SourceFileInfo[],
+  depType?: "prod" | "dev" | "optional" | "peer",
 ): Promise<SourceAnalysisResult> => {
   const allEvidence: string[] = [];
 
@@ -75,6 +76,9 @@ export const analyzeSourceUsage = async (
   }
 
   if (allEvidence.length === 0) {
+    if (depType === "prod" || depType === "dev") {
+      return { usage: "CANT_DETERMINE", evidence: [`Package is a direct ${depType} dependency but not imported in src/ files`], confidence: 0.5 };
+    }
     return { usage: "NOT_USED", evidence: [], confidence: 1 };
   }
 

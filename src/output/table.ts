@@ -1,18 +1,89 @@
 import pc from "picocolors";
 import type { AuditReport } from "../agent/orchestrator";
 
+const severityColor = (severity: string) =>
+  severity === "CRITICAL" || severity === "HIGH"
+    ? pc.red
+    : severity === "MEDIUM"
+      ? pc.yellow
+      : pc.dim;
+
+const formatQuickRow = (r: AuditReport["report"]["results"][number]): string[] => {
+  const color = severityColor(r.advisory.severity);
+  const lines: string[] = [];
+  lines.push(`${color(r.advisory.severity.padEnd(8))} ${pc.bold(r.dependency.name)}@${r.dependency.version}`);
+  if (r.advisory.cveId) {
+    lines.push(`  ${pc.dim(`${r.advisory.cveId}: ${r.advisory.title}`)}`);
+  } else {
+    lines.push(`  ${pc.dim(r.advisory.title)}`);
+  }
+  if (r.advisory.fixVersion) {
+    lines.push(`  ${pc.green(`Fix: upgrade to ${r.advisory.fixVersion}`)}`);
+  }
+  return lines;
+};
+
+const formatFullRow = (r: AuditReport["report"]["results"][number]): string[] => {
+  const lines: string[] = [];
+  const pkgLabel = `${pc.bold(r.dependency.name)}@${r.dependency.version}`;
+
+  if (r.usage === "USED") {
+    const color = severityColor(r.advisory.severity);
+    lines.push(`  ${pc.red("● USED")} ${color(r.advisory.severity.padEnd(8))} ${pkgLabel}`);
+  } else if (r.usage === "NOT_USED") {
+    lines.push(`  ${pc.green("○ FP")}   ${pkgLabel} ${pc.dim(`(severity: ${r.advisory.severity}, but not used)`)}`);
+  } else {
+    const color = severityColor(r.advisory.severity);
+    lines.push(`  ${pc.dim("?")}      ${color(r.advisory.severity.padEnd(8))} ${pkgLabel}`);
+  }
+
+  if (r.advisory.cveId) {
+    lines.push(`           ${pc.dim(`${r.advisory.cveId}: ${r.advisory.title}`)}`);
+  } else {
+    lines.push(`           ${pc.dim(r.advisory.title)}`);
+  }
+  if (r.advisory.fixVersion) {
+    lines.push(`           ${pc.green(`Fix: upgrade to ${r.advisory.fixVersion}`)}`);
+  }
+
+  if (r.usage === "USED" && r.usageEvidence.length > 0) {
+    for (const ev of r.usageEvidence.slice(0, 3)) {
+      lines.push(`           ${pc.cyan("→")} ${pc.dim(ev)}`);
+    }
+    if (r.usageEvidence.length > 3) {
+      lines.push(`           ${pc.dim(`... and ${r.usageEvidence.length - 3} more evidence lines`)}`);
+    }
+    lines.push(`           ${pc.dim(`Confidence: ${Math.round(r.confidence * 100)}%`)}`);
+  } else if (r.usage === "NOT_USED") {
+    lines.push(`           ${pc.dim("→ Not imported or called in project source")}`);
+    lines.push(`           ${pc.dim(`Confidence: ${Math.round(r.confidence * 100)}%`)}`);
+  } else if (r.usage === "CANT_DETERMINE") {
+    if (r.usageEvidence.length > 0) {
+      for (const ev of r.usageEvidence.slice(0, 2)) {
+        lines.push(`           ${pc.yellow("→")} ${pc.dim(ev)}`);
+      }
+    } else {
+      lines.push(`           ${pc.dim("→ Could not determine usage (no source references found)")}`);
+    }
+  }
+
+  return lines;
+};
+
 export const formatTable = (auditReport: AuditReport): string => {
   const { report, steps, totalDurationMs } = auditReport;
   const lines: string[] = [];
+
+  const isQuick = report.metadata.mode === "quick";
 
   lines.push(`\n${pc.bold("AI Dependency Auditor")}`);
   lines.push(`${pc.dim("Project:")} ${report.metadata.projectPath}`);
   lines.push(`${pc.dim("Dependencies:")} ${report.summary.totalDependencies}`);
   lines.push(`${pc.dim("Sources:")} ${[...report.metadata.sourcesUsed].join(", ") || "none"}`);
-  lines.push(`${pc.dim("Mode:")} ${report.metadata.mode}`);
-  if (steps.length > 0) {
-    const stepSummary = steps.map(s => `${s.name}=${s.status}`).join(", ");
-    lines.push(`${pc.dim("Steps:")} ${stepSummary}`);
+  if (isQuick) {
+    lines.push(`${pc.dim("Mode:")} ${pc.yellow("quick (no LLM)")} — raw advisory list`);
+  } else {
+    lines.push(`${pc.dim("Mode:")} full — classified by ${report.metadata.llmProvider}/${report.metadata.llmModel}`);
   }
   lines.push(`${pc.dim("Duration:")} ${totalDurationMs}ms\n`);
 
@@ -21,46 +92,72 @@ export const formatTable = (auditReport: AuditReport): string => {
     return lines.join("\n");
   }
 
-  const critical = report.summary.criticalCount;
-  const high = report.summary.highCount;
-  const medium = report.summary.mediumCount;
-  const low = report.summary.lowCount;
-  const fps = report.summary.falsePositives;
+  if (isQuick) {
+    // Quick mode: simple advisory list per dep-audit_completo.md V1 spec
+    lines.push(pc.dim("No LLM configured — showing raw advisory list"));
+    lines.push(pc.dim("──────────────────────────────────────────────"));
+    for (const result of report.results) {
+      for (const l of formatQuickRow(result)) lines.push(l);
+      lines.push("");
+    }
+    const total = report.summary.totalAdvisories;
+    lines.push(`${pc.dim(`Summary: ${total} advisory(ies) found.`)}`);
+    lines.push(`${pc.dim("Tip: set up an LLM provider to classify which are real vs false positives.")}\n`);
+    return lines.join("\n");
+  }
 
-  lines.push(
-    `${pc.red(`CRITICAL: ${critical}`)} | ${pc.red(`HIGH: ${high}`)} | ${pc.yellow(`MEDIUM: ${medium}`)} | ${pc.dim(`LOW: ${low}`)}${fps > 0 ? ` | ${pc.green(`FP: ${fps}`)}` : ""}\n`,
-  );
+  // Full mode: classified report with usage analysis per V2 spec
+  const used = report.results.filter(r => r.usage === "USED");
+  const fps = report.results.filter(r => r.usage === "NOT_USED");
+  const unknown = report.results.filter(r => r.usage === "CANT_DETERMINE");
+
+  lines.push(pc.dim("LLM source analysis — classified results"));
+  lines.push(pc.dim("───────────────────────────────────────────\n"));
 
   for (const result of report.results) {
-    const severityColor = result.risk === "CRITICAL" || result.risk === "HIGH"
-      ? pc.red
-      : result.risk === "MEDIUM"
-        ? pc.yellow
-        : pc.dim;
-
-    const usageIcon = result.usage === "USED" ? pc.red("●") : result.usage === "NOT_USED" ? pc.green("○") : pc.dim("?");
-
-    lines.push(
-      `${severityColor(result.risk.padEnd(8))} ${pc.bold(result.dependency.name)}@${result.dependency.version}`,
-    );
-    lines.push(`  ${pc.dim(result.advisory.title)}`);
-    if (result.advisory.cveId) lines.push(`  ${pc.dim(`CVE: ${result.advisory.cveId}`)}`);
-    if (result.advisory.fixVersion) lines.push(`  ${pc.green(`Fix: upgrade to ${result.advisory.fixVersion}`)}`);
-    lines.push(`  ${usageIcon} ${pc.dim(`Usage: ${result.usage} (${Math.round(result.confidence * 100)}% confidence)`)}`);
-    if (result.usageEvidence.length > 0) {
-      for (const ev of result.usageEvidence.slice(0, 3)) {
-        lines.push(`    ${pc.dim(ev)}`);
-      }
-      if (result.usageEvidence.length > 3) {
-        lines.push(`    ${pc.dim(`... and ${result.usageEvidence.length - 3} more`)}`);
-      }
-    }
+    for (const l of formatFullRow(result)) lines.push(l);
     lines.push("");
   }
 
-  if (report.summary.falsePositives > 0) {
-    lines.push(`${pc.green(`✓ ${report.summary.falsePositives} false positive(s) identified by LLM analysis.`)}\n`);
+  // Severity breakdown
+  const severityCounts: Record<string, number> = {};
+  for (const r of report.results) {
+    const sev = r.advisory.severity;
+    severityCounts[sev] = (severityCounts[sev] ?? 0) + 1;
   }
+
+  const sevParts: string[] = [];
+  for (const s of ["CRITICAL", "HIGH", "MEDIUM", "LOW", "NONE"] as const) {
+    const c = severityCounts[s] ?? 0;
+    if (c > 0 || s === "NONE") {
+      const color = s === "CRITICAL" || s === "HIGH" ? pc.red : s === "MEDIUM" ? pc.yellow : pc.dim;
+      sevParts.push(`${color(`${s}: ${c}`)}`);
+    }
+  }
+
+  lines.push(pc.dim("Severity Breakdown (from advisory sources):"));
+  lines.push(`  ${sevParts.join(" | ")}\n`);
+
+  lines.push(pc.dim("Classification Summary:"));
+  lines.push(`  ${pc.red(`● Real: ${used.length}`)}  ${pc.green(`○ False Positives: ${fps.length}`)}  ${pc.dim(`? Unknown: ${unknown.length}`)}\n`);
+
+  // Verdict
+  if (used.length > 0) {
+    const maxSev = used.reduce((a, b) => {
+      const order = ["NONE", "LOW", "MEDIUM", "HIGH", "CRITICAL"];
+      return order.indexOf(a.advisory.severity) > order.indexOf(b.advisory.severity) ? a : b;
+    });
+    lines.push(pc.red(`VERDICT: ${used.length} real vulnerabilit(ies) confirmed — highest severity: ${maxSev.advisory.severity}. Prioritize fixes.`));
+  } else if (fps.length > 0 && unknown.length === 0) {
+    lines.push(pc.green("VERDICT: No real vulnerabilities found. All advisories were false positives."));
+  } else if (unknown.length > 0 && fps.length === 0) {
+    lines.push(pc.dim("VERDICT: Could not determine usage for any advisory. Review manually or check source code."));
+  } else if (unknown.length > 0) {
+    lines.push(pc.yellow("VERDICT: No real vulnerabilities confirmed, but some could not be classified. Review unknown items manually."));
+  } else {
+    lines.push(pc.green("VERDICT: No real vulnerabilities found."));
+  }
+  lines.push("");
 
   return lines.join("\n");
 };

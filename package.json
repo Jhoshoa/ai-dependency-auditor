@@ -1,6 +1,6 @@
 {
   "name": "ai-dependency-auditor",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "type": "module",
   "description": "AI-powered dependency vulnerability auditor that reduces false positives using LLM analysis",
   "bin": {

@@ -69,11 +69,11 @@ describe("formatTable", () => {
     expect(output).toContain("/test/project");
   });
 
-  it("contains severity counts", () => {
+  it("shows classification summary counts", () => {
     const output = formatTable(mockReport());
-    expect(output).toContain("CRITICAL: 1");
-    expect(output).toContain("HIGH: 1");
-    expect(output).toContain("FP: 1");
+    expect(output).toContain("Real: 1");
+    expect(output).toContain("False Positives: 1");
+    expect(output).toContain("Unknown: 0");
   });
 
   it("contains dependency details", () => {
@@ -87,9 +87,10 @@ describe("formatTable", () => {
 
   it("shows usage and confidence", () => {
     const output = formatTable(mockReport());
-    expect(output).toContain("Usage: USED");
-    expect(output).toContain("95% confidence");
-    expect(output).toContain("Usage: NOT_USED");
+    expect(output).toContain("USED");
+    expect(output).toContain("Confidence: 95%");
+    expect(output).toContain("FP");
+    expect(output).toContain("Confidence: 85%");
   });
 
   it("shows 'No vulnerabilities' when no advisories", () => {
@@ -97,14 +98,21 @@ describe("formatTable", () => {
     expect(output).toContain("No vulnerabilities found");
   });
 
-  it("shows false positive count", () => {
+  it("shows verdict and false positive count", () => {
     const output = formatTable(mockReport());
-    expect(output).toContain("false positive");
+    expect(output).toContain("VERDICT");
+    expect(output).toContain("CRITICAL");
   });
 
-  it("contains step summary", () => {
+  it("shows LLM provider info in full mode", () => {
     const output = formatTable(mockReport());
-    expect(output).toContain("scan-project");
-    expect(output).toContain("done");
+    expect(output).toContain("openai");
+    expect(output).toContain("gpt-4");
+  });
+
+  it("shows severity breakdown", () => {
+    const output = formatTable(mockReport());
+    expect(output).toContain("CRITICAL: 1");
+    expect(output).toContain("HIGH: 1");
   });
 });
