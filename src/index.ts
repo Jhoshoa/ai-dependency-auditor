@@ -5,6 +5,8 @@ export { compressAdvisories, analyzeSourceUsage } from "./analysis";
 export type { CompressedAdvisory, CompressionResult, CompressionStats, SourceFileInfo, SourceAnalysisResult } from "./analysis";
 export { runAudit } from "./agent";
 export type { AgentStep, AuditReport } from "./agent";
+export { formatOutput } from "./output";
+export type { OutputFormat } from "./output";
 export { createLlmClient } from "./llm";
 export type { LlmClient, LlmClientResponse } from "./llm";
 export type { ParsedProject, Dependency } from "./types/dependency";

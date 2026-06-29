@@ -1,12 +1,18 @@
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import { scanProject } from "../scanner";
 import { createLlmClient } from "../llm";
 import { compressAdvisories, analyzeSourceUsage } from "../analysis";
 import type { LlmClient } from "../llm/openai-client";
 import type { AppConfig, AuditMode } from "../types/config";
 import type { Advisory } from "../types/advisory";
+import type { Dependency } from "../types/dependency";
 import type { Logger } from "../logger";
 import type { Report, AnalysisResult, RiskLevel } from "../types/report";
 import type { CompressedAdvisory } from "../analysis/compressor";
+import type { SourceFileInfo, SourceAnalysisResult } from "../analysis/source-analyzer";
+import { checkEnvironment } from "./tools";
+import type { EnvironmentInfo } from "./tools";
 
 export interface AgentStep {
   readonly name: string;
@@ -19,7 +25,38 @@ export interface AuditReport {
   readonly report: Report;
   readonly steps: readonly AgentStep[];
   readonly totalDurationMs: number;
+  readonly environment: EnvironmentInfo;
 }
+
+const SOURCE_EXTENSIONS = new Set([".ts", ".js", ".tsx", ".jsx", ".mjs", ".cjs"]);
+
+const collectSourceFiles = (projectPath: string): SourceFileInfo[] => {
+  const srcDir = join(projectPath, "src");
+  if (!existsSync(srcDir)) return [];
+
+  const files: SourceFileInfo[] = [];
+  const walk = (dir: string): void => {
+    try {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const fullPath = join(dir, entry.name);
+        if (entry.isDirectory() && !entry.name.startsWith(".") && entry.name !== "node_modules") {
+          walk(fullPath);
+        } else if (entry.isFile() && SOURCE_EXTENSIONS.has(entry.name.slice(entry.name.lastIndexOf(".")))) {
+          try {
+            const content = readFileSync(fullPath, "utf-8");
+            files.push({ path: fullPath, content });
+          } catch {
+            // skip unreadable files
+          }
+        }
+      }
+    } catch {
+      // skip inaccessible directories
+    }
+  };
+  walk(srcDir);
+  return files;
+};
 
 const mapSeverity = (severity: string): RiskLevel => {
   switch (severity) {
@@ -31,23 +68,26 @@ const mapSeverity = (severity: string): RiskLevel => {
   }
 };
 
-const createStep = (name: string): AgentStep => ({ name, status: "pending" });
+const startStep = (name: string): { step: AgentStep; startedAt: number } => ({
+  step: { name, status: "running" },
+  startedAt: Date.now(),
+});
 
-const stepDone = (step: AgentStep, startedAt: number): AgentStep => ({
+const completeStep = (step: AgentStep, startedAt: number): AgentStep => ({
   ...step,
   status: "done",
   durationMs: Date.now() - startedAt,
 });
 
-const stepFailed = (step: AgentStep, startedAt: number, error: string): AgentStep => ({
+const failStep = (step: AgentStep, startedAt: number, err: unknown): AgentStep => ({
   ...step,
   status: "failed",
   durationMs: Date.now() - startedAt,
-  error,
+  error: err instanceof Error ? err.message : String(err),
 });
 
-const stepSkipped = (step: AgentStep): AgentStep => ({
-  ...step,
+const skipStep = (name: string): AgentStep => ({
+  name,
   status: "skipped",
 });
 
@@ -58,58 +98,90 @@ export const runAudit = async (
 ): Promise<AuditReport> => {
   const startTime = Date.now();
   const steps: AgentStep[] = [];
+  const env = checkEnvironment(projectPath, config);
+
+  logger.info({ event: "agent.evaluate", hasPackageJson: env.hasPackageJson, hasLockfile: env.hasLockfile, hasSourceDir: env.hasSourceDir, hasApiKey: env.hasApiKey });
+
+  if (!env.hasPackageJson) {
+    const elapsed = Date.now() - startTime;
+    const emptyReport: Report = {
+      summary: { totalDependencies: 0, totalAdvisories: 0, criticalCount: 0, highCount: 0, mediumCount: 0, lowCount: 0, falsePositives: 0, scanDurationMs: elapsed },
+      results: [],
+      metadata: {
+        projectPath,
+        llmProvider: config.llm.provider,
+        llmModel: config.llm.model,
+        scannedAt: new Date().toISOString(),
+        mode: config.mode,
+        sourcesUsed: [],
+      },
+    };
+    return { report: emptyReport, steps: [], totalDurationMs: elapsed, environment: env };
+  }
 
   // Step 1: Scan
-  const scanStep = createStep("scan");
-  steps.push(scanStep);
-  const scanStarted = Date.now();
+  const s1 = startStep("scan-project");
+  steps.push(s1.step);
+
   let advisories: readonly Advisory[];
-  let dependencies: readonly import("../types/dependency").Dependency[];
+  let dependencies: readonly Dependency[];
   let sourcesUsed: readonly string[];
   let projectName: string;
 
   try {
-    logger.info({ event: "agent.step", step: "scan", status: "running" });
-    const scanResult = await scanProject({ mode: config.mode, projectPath });
+    const scanResult = await scanProject({ mode: env.hasLockfile ? config.mode : "quick", projectPath });
     advisories = scanResult.advisories;
     dependencies = scanResult.dependencies;
     sourcesUsed = scanResult.sourcesUsed;
     projectName = scanResult.project.name || projectPath;
-    steps[steps.length - 1] = stepDone(scanStep, scanStarted);
-    logger.info({ event: "agent.step", step: "scan", status: "done", advisories: advisories.length, dependencies: dependencies.length });
+    steps[steps.length - 1] = completeStep(s1.step, s1.startedAt);
+    logger.info({ event: "agent.scan.complete", advisories: advisories.length, dependencies: dependencies.length, sources: sourcesUsed });
   } catch (err) {
-    steps[steps.length - 1] = stepFailed(scanStep, scanStarted, err instanceof Error ? err.message : String(err));
+    steps[steps.length - 1] = failStep(s1.step, s1.startedAt, err);
     throw err;
   }
 
   if (advisories.length === 0) {
     const elapsed = Date.now() - startTime;
-    return buildAuditReport(projectPath, projectName, [], dependencies, sourcesUsed, elapsed, config.mode, config.llm, steps, []);
+    const emptyReport: Report = {
+      summary: { totalDependencies: dependencies.length, totalAdvisories: 0, criticalCount: 0, highCount: 0, mediumCount: 0, lowCount: 0, falsePositives: 0, scanDurationMs: elapsed },
+      results: [],
+      metadata: {
+        projectPath,
+        llmProvider: config.llm.provider,
+        llmModel: config.llm.model,
+        scannedAt: new Date().toISOString(),
+        mode: config.mode,
+        sourcesUsed: [...sourcesUsed],
+      },
+    };
+    return { report: emptyReport, steps, totalDurationMs: elapsed, environment: env };
   }
 
-  // Step 2: Compression (full mode only)
-  const compressStep = createStep("compress");
-  steps.push(compressStep);
-  const compressStarted = Date.now();
+  const canUseLlm = config.mode === "full" && env.hasApiKey;
+
+  // Step 2: Compression
   let compressedAdvisories: readonly CompressedAdvisory[];
 
-  if (config.mode === "full") {
+  if (canUseLlm) {
+    const s2 = startStep("compress-advisories");
+    steps.push(s2.step);
+
     try {
-      logger.info({ event: "agent.step", step: "compress", status: "running" });
       let client: LlmClient;
       try {
         client = await createLlmClient(config.llm);
       } catch {
-        steps[steps.length - 1] = stepFailed(compressStep, compressStarted, "Failed to create LLM client");
+        steps[steps.length - 1] = failStep(s2.step, s2.startedAt, new Error("Failed to create LLM client"));
         throw new Error("Failed to create LLM client");
       }
 
       const { result } = await compressAdvisories(client, advisories);
       compressedAdvisories = result.advisories;
-      steps[steps.length - 1] = stepDone(compressStep, compressStarted);
-      logger.info({ event: "agent.step", step: "compress", status: "done", input: advisories.length, output: compressedAdvisories.length });
+      steps[steps.length - 1] = completeStep(s2.step, s2.startedAt);
+      logger.info({ event: "agent.compress.complete", input: advisories.length, output: compressedAdvisories.length });
     } catch (err) {
-      steps[steps.length - 1] = stepFailed(compressStep, compressStarted, err instanceof Error ? err.message : String(err));
+      steps[steps.length - 1] = failStep(s2.step, s2.startedAt, err);
       compressedAdvisories = [];
     }
   } else {
@@ -119,26 +191,26 @@ export const runAudit = async (
       vulnerableFunction: a.vulnerableFunctions[0] ?? "general",
       fixVersion: a.fixVersion,
     }));
-    steps[steps.length - 1] = stepSkipped(compressStep);
+    steps.push(skipStep("compress-advisories"));
   }
 
-  // Step 3: Source Analysis (full mode only)
-  const analysisStep = createStep("source-analysis");
-  steps.push(analysisStep);
-  const analysisStarted = Date.now();
+  // Step 3: Source Analysis
   const results: AnalysisResult[] = [];
 
-  if (config.mode === "full" && compressedAdvisories.length > 0) {
+  if (canUseLlm && env.hasSourceDir && compressedAdvisories.length > 0) {
+    const s3 = startStep("analyze-source");
+    steps.push(s3.step);
+
     try {
-      logger.info({ event: "agent.step", step: "source-analysis", status: "running" });
       let client: LlmClient;
       try {
         client = await createLlmClient(config.llm);
       } catch {
-        steps[steps.length - 1] = stepFailed(analysisStep, analysisStarted, "Failed to create LLM client");
+        steps[steps.length - 1] = failStep(s3.step, s3.startedAt, new Error("Failed to create LLM client"));
         throw new Error("Failed to create LLM client");
       }
 
+      const sourceFiles = collectSourceFiles(projectPath);
       const depMap = new Map(dependencies.map(d => [d.name, d]));
       const advisoryMap = new Map(advisories.map(a => [a.cveId ?? a.id, a]));
 
@@ -151,7 +223,7 @@ export const runAudit = async (
             client,
             advisory?.packageName ?? ca.cveId,
             [ca.vulnerableFunction],
-            [],
+            sourceFiles,
           );
 
           results.push({
@@ -174,18 +246,8 @@ export const runAudit = async (
           });
         } catch {
           results.push({
-            dependency: {
-              name: advisory?.packageName ?? ca.cveId,
-              version: dep?.version ?? "unknown",
-              type: dep?.type ?? "prod",
-            },
-            advisory: {
-              id: advisory?.id ?? ca.cveId,
-              cveId: ca.cveId,
-              severity: ca.severity,
-              title: advisory?.title ?? "",
-              fixVersion: ca.fixVersion,
-            },
+            dependency: { name: advisory?.packageName ?? ca.cveId, version: dep?.version ?? "unknown", type: dep?.type ?? "prod" },
+            advisory: { id: advisory?.id ?? ca.cveId, cveId: ca.cveId, severity: ca.severity, title: advisory?.title ?? "", fixVersion: ca.fixVersion },
             usage: "CANT_DETERMINE",
             usageEvidence: [],
             risk: mapSeverity(ca.severity),
@@ -194,57 +256,29 @@ export const runAudit = async (
         }
       }
 
-      steps[steps.length - 1] = stepDone(analysisStep, analysisStarted);
-      logger.info({ event: "agent.step", step: "source-analysis", status: "done", count: results.length });
+      steps[steps.length - 1] = completeStep(s3.step, s3.startedAt);
+      logger.info({ event: "agent.analysis.complete", count: results.length });
     } catch (err) {
-      steps[steps.length - 1] = stepFailed(analysisStep, analysisStarted, err instanceof Error ? err.message : String(err));
+      steps[steps.length - 1] = failStep(s3.step, s3.startedAt, err);
     }
   } else {
     for (const ca of compressedAdvisories) {
       const advisory = advisories.find(a => (a.cveId ?? a.id) === ca.cveId);
       const dep = dependencies.find(d => d.name === advisory?.packageName);
       results.push({
-        dependency: {
-          name: advisory?.packageName ?? ca.cveId,
-          version: dep?.version ?? "unknown",
-          type: dep?.type ?? "prod",
-        },
-        advisory: {
-          id: advisory?.id ?? ca.cveId,
-          cveId: ca.cveId,
-          severity: ca.severity,
-          title: advisory?.title ?? "",
-          fixVersion: ca.fixVersion,
-        },
+        dependency: { name: advisory?.packageName ?? ca.cveId, version: dep?.version ?? "unknown", type: dep?.type ?? "prod" },
+        advisory: { id: advisory?.id ?? ca.cveId, cveId: ca.cveId, severity: ca.severity, title: advisory?.title ?? "", fixVersion: ca.fixVersion },
         usage: "CANT_DETERMINE",
         usageEvidence: [],
         risk: mapSeverity(ca.severity),
         confidence: 0,
       });
     }
-    steps[steps.length - 1] = stepSkipped(analysisStep);
+    steps.push(skipStep("analyze-source"));
   }
 
+  // Step 4: Generate report
   const totalDurationMs = Date.now() - startTime;
-
-  return buildAuditReport(
-    projectPath, projectName, results, dependencies, sourcesUsed,
-    totalDurationMs, config.mode, config.llm, steps, advisories,
-  );
-};
-
-const buildAuditReport = (
-  projectPath: string,
-  projectName: string,
-  results: readonly AnalysisResult[],
-  dependencies: readonly import("../types/dependency").Dependency[],
-  sourcesUsed: readonly string[],
-  totalDurationMs: number,
-  mode: AuditMode,
-  llmConfig: import("../types/config").LlmConfig,
-  steps: readonly AgentStep[],
-  advisories: readonly Advisory[],
-): AuditReport => {
   const criticalCount = results.filter(r => r.risk === "CRITICAL").length;
   const highCount = results.filter(r => r.risk === "HIGH").length;
   const mediumCount = results.filter(r => r.risk === "MEDIUM").length;
@@ -265,13 +299,13 @@ const buildAuditReport = (
     results: [...results],
     metadata: {
       projectPath,
-      llmProvider: llmConfig.provider,
-      llmModel: llmConfig.model,
+      llmProvider: config.llm.provider,
+      llmModel: config.llm.model,
       scannedAt: new Date().toISOString(),
-      mode,
+      mode: config.mode,
       sourcesUsed: [...sourcesUsed],
     },
   };
 
-  return { report, steps, totalDurationMs };
+  return { report, steps, totalDurationMs, environment: env };
 };
