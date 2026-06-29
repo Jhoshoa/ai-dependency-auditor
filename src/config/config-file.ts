@@ -45,6 +45,7 @@ export const writeDefaultConfig = (): string => {
     llm: {
       provider: "openai",
       model: "gpt-4o-mini",
+      apiKey: "YOUR_API_KEY_HERE",
       temperature: 0.0,
       maxTokens: 16384,
     },
