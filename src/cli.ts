@@ -6,7 +6,7 @@ import { resolveConfig } from "./config";
 import type { CliFlags } from "./config";
 import { runAudit } from "./agent";
 import { formatOutput } from "./output";
-import { logger } from "./logger/trace";
+import { logger, TraceRecorder } from "./logger/trace";
 import { AuditError, ConfigError, LlmError } from "./utils/errors";
 import { fileExists } from "./utils/file";
 
@@ -65,6 +65,12 @@ program
 
       const auditReport = await runAudit(config, projectPath, logger);
 
+      const traceRecorder = new TraceRecorder();
+      if (traceRecorder.isLangSmithEnabled) {
+        logger.info({ event: "langsmith.enabled" });
+      }
+      const tracePath = traceRecorder.record(auditReport, config);
+
       logger.info({
         event: "audit.complete",
         dependencies: auditReport.report.summary.totalDependencies,
@@ -75,6 +81,7 @@ program
         provider: config.llm.provider,
         model: config.llm.model,
         steps: auditReport.steps.length,
+        trace: tracePath,
       });
 
       const output = formatOutput(auditReport, config.audit.format);
