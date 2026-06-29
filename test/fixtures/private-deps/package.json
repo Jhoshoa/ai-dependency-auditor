@@ -1,0 +1,10 @@
+{
+  "name": "private-deps",
+  "version": "1.0.0",
+  "description": "Project with private dependencies",
+  "dependencies": {
+    "@company/internal-lib": "2.1.0",
+    "@company/auth-sdk": "1.0.5",
+    "lodash": "4.17.20"
+  }
+}
