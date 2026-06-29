@@ -1,0 +1,278 @@
+{
+  "summary": {
+    "totalDependencies": 4,
+    "totalAdvisories": 15,
+    "criticalCount": 2,
+    "highCount": 0,
+    "mediumCount": 1,
+    "lowCount": 0,
+    "falsePositives": 8,
+    "scanDurationMs": 12471
+  },
+  "results": [
+    {
+      "dependency": { "name": "lodash", "version": "4.17.20", "type": "prod" },
+      "advisory": {
+        "id": "GHSA-4hfp-4w8h-8w3x",
+        "cveId": "CVE-2021-23337",
+        "severity": "CRITICAL",
+        "title": "Command injection via template in lodash",
+        "fixVersion": "4.17.21"
+      },
+      "usage": "NOT_USED",
+      "usageEvidence": [
+        "No se encontró uso de _.template() en el código fuente",
+        "El proyecto solo usa console.log()"
+      ],
+      "risk": "NONE",
+      "confidence": 0.92
+    },
+    {
+      "dependency": { "name": "lodash", "version": "4.17.20", "type": "prod" },
+      "advisory": {
+        "id": "GHSA-3f5p-8j9q-5w4v",
+        "cveId": "CVE-2020-8203",
+        "severity": "HIGH",
+        "title": "Prototype pollution in zipObjectDeep",
+        "fixVersion": "4.17.21"
+      },
+      "usage": "NOT_USED",
+      "usageEvidence": [
+        "No se encontró import de zipObjectDeep",
+        "No se encontró uso de zipObjectDeep en el árbol de imports"
+      ],
+      "risk": "NONE",
+      "confidence": 0.96
+    },
+    {
+      "dependency": { "name": "lodash", "version": "4.17.20", "type": "prod" },
+      "advisory": {
+        "id": "GHSA-7p9h-7q4j-9w5x",
+        "cveId": "CVE-2020-28502",
+        "severity": "HIGH",
+        "title": "Prototype pollution via XMLHttpRequest",
+        "fixVersion": "4.17.21"
+      },
+      "usage": "NOT_USED",
+      "usageEvidence": [
+        "No se encontró uso de XMLHttpRequest en el proyecto",
+        "El proyecto no realiza peticiones HTTP"
+      ],
+      "risk": "NONE",
+      "confidence": 0.88
+    },
+    {
+      "dependency": { "name": "lodash", "version": "4.17.20", "type": "prod" },
+      "advisory": {
+        "id": "GHSA-5v8w-4q7j-3w5x",
+        "cveId": "CVE-2019-10744",
+        "severity": "MEDIUM",
+        "title": "Prototype pollution in lodash merge",
+        "fixVersion": "4.17.21"
+      },
+      "usage": "NOT_USED",
+      "usageEvidence": [
+        "No se encontró uso de _.merge() en el código fuente"
+      ],
+      "risk": "NONE",
+      "confidence": 0.90
+    },
+    {
+      "dependency": { "name": "lodash", "version": "4.17.20", "type": "prod" },
+      "advisory": {
+        "id": "GHSA-8p9h-7q4j-5w3x",
+        "cveId": "CVE-2020-8203",
+        "severity": "MEDIUM",
+        "title": "Prototype pollution in defaultsDeep",
+        "fixVersion": "4.17.21"
+      },
+      "usage": "NOT_USED",
+      "usageEvidence": [
+        "No se encontró uso de defaultsDeep en el código"
+      ],
+      "risk": "NONE",
+      "confidence": 0.85
+    },
+    {
+      "dependency": { "name": "lodash", "version": "4.17.20", "type": "prod" },
+      "advisory": {
+        "id": "GHSA-6p9h-8q4j-7w5x",
+        "cveId": "CVE-2020-28502",
+        "severity": "LOW",
+        "title": "Low severity prototype pollution in lodash",
+        "fixVersion": "4.17.21"
+      },
+      "usage": "NOT_USED",
+      "usageEvidence": [
+        "No se encontró uso de merge profundo en el proyecto"
+      ],
+      "risk": "NONE",
+      "confidence": 0.91
+    },
+    {
+      "dependency": { "name": "axios", "version": "0.21.1", "type": "prod" },
+      "advisory": {
+        "id": "GHSA-4w8h-8p9j-5v3x",
+        "cveId": "CVE-2021-3749",
+        "severity": "CRITICAL",
+        "title": "SSRF in axios",
+        "fixVersion": "0.21.2"
+      },
+      "usage": "USED",
+      "usageEvidence": [
+        "línea 3: import axios from 'axios'",
+        "línea 8: axios.get('https://api.example.com/data')"
+      ],
+      "risk": "CRITICAL",
+      "confidence": 0.95
+    },
+    {
+      "dependency": { "name": "axios", "version": "0.21.1", "type": "prod" },
+      "advisory": {
+        "id": "GHSA-5w8h-7p9j-4v3x",
+        "cveId": "CVE-2021-3749",
+        "severity": "MEDIUM",
+        "title": "Inefficient regex in axios trim",
+        "fixVersion": "0.21.2"
+      },
+      "usage": "CANT_DETERMINE",
+      "usageEvidence": [
+        "axios se usa en el proyecto, pero no se pudo determinar si usa trim()",
+        "La función trim() es interna de axios, no llamada directamente"
+      ],
+      "risk": "MEDIUM",
+      "confidence": 0.45
+    },
+    {
+      "dependency": { "name": "express", "version": "4.17.1", "type": "prod" },
+      "advisory": {
+        "id": "GHSA-7w9h-6p8j-3v4x",
+        "cveId": "CVE-2022-24999",
+        "severity": "HIGH",
+        "title": "Open redirect in qs",
+        "fixVersion": "4.18.0"
+      },
+      "usage": "USED",
+      "usageEvidence": [
+        "línea 5: import express from 'express'",
+        "línea 12: app.get('/redirect', (req, res) => res.redirect(req.query.url))"
+      ],
+      "risk": "CRITICAL",
+      "confidence": 0.87
+    },
+    {
+      "dependency": { "name": "express", "version": "4.17.1", "type": "prod" },
+      "advisory": {
+        "id": "GHSA-8w9h-7p7j-4v5x",
+        "cveId": "CVE-2024-29041",
+        "severity": "HIGH",
+        "title": "Path traversal in express.static",
+        "fixVersion": "4.19.0"
+      },
+      "usage": "USED",
+      "usageEvidence": [
+        "línea 6: app.use(express.static('public'))"
+      ],
+      "risk": "MEDIUM",
+      "confidence": 0.78
+    },
+    {
+      "dependency": { "name": "express", "version": "4.17.1", "type": "prod" },
+      "advisory": {
+        "id": "GHSA-9w9h-6p8j-5v4x",
+        "cveId": "CVE-2022-24999",
+        "severity": "MEDIUM",
+        "title": "ReDoS in qs parsing",
+        "fixVersion": "4.18.0"
+      },
+      "usage": "NOT_USED",
+      "usageEvidence": [
+        "No se encontró parsing de query strings complejos"
+      ],
+      "risk": "NONE",
+      "confidence": 0.82
+    },
+    {
+      "dependency": { "name": "express", "version": "4.17.1", "type": "prod" },
+      "advisory": {
+        "id": "GHSA-0w9h-7p9j-6v5x",
+        "cveId": "CVE-2024-29041",
+        "severity": "LOW",
+        "title": "Low severity path traversal in express.static",
+        "fixVersion": "4.19.0"
+      },
+      "usage": "NOT_USED",
+      "usageEvidence": [
+        "express.static se usa con un solo directorio fijo ('public')",
+        "No se pasa input del usuario a express.static"
+      ],
+      "risk": "NONE",
+      "confidence": 0.79
+    },
+    {
+      "dependency": { "name": "mocha", "version": "8.3.0", "type": "dev" },
+      "advisory": {
+        "id": "GHSA-1w9h-8p7j-7v6x",
+        "cveId": "CVE-2022-24999",
+        "severity": "LOW",
+        "title": "ReDoS in mocha diff output",
+        "fixVersion": "9.0.0"
+      },
+      "usage": "CANT_DETERMINE",
+      "usageEvidence": [
+        "Dependencia dev, no se encontró uso directo en src/",
+        "mocha se usa solo para testing local"
+      ],
+      "risk": "LOW",
+      "confidence": 0.30
+    },
+    {
+      "dependency": { "name": "mocha", "version": "8.3.0", "type": "dev" },
+      "advisory": {
+        "id": "GHSA-2w9h-7p8j-6v7x",
+        "cveId": "CVE-2021-23368",
+        "severity": "LOW",
+        "title": "Prototype pollution in mocha growl",
+        "fixVersion": "9.0.0"
+      },
+      "usage": "CANT_DETERMINE",
+      "usageEvidence": [
+        "Dependencia dev, growl no se referencia en el código",
+        "growl es una sub-dependencia de mocha"
+      ],
+      "risk": "LOW",
+      "confidence": 0.25
+    },
+    {
+      "dependency": { "name": "mocha", "version": "8.3.0", "type": "dev" },
+      "advisory": {
+        "id": "GHSA-3w9h-6p9j-5v8x",
+        "cveId": "CVE-2020-28502",
+        "severity": "LOW",
+        "title": "Prototype pollution via chalk in mocha",
+        "fixVersion": "9.0.0"
+      },
+      "usage": "CANT_DETERMINE",
+      "usageEvidence": [
+        "Dependencia dev, chalk es sub-dependencia de mocha",
+        "No se encontró referencia directa a chalk"
+      ],
+      "risk": "LOW",
+      "confidence": 0.20
+    }
+  ],
+  "metadata": {
+    "projectPath": "test/fixtures/vulnerable-project",
+    "llmProvider": "openai",
+    "llmModel": "gpt-4o-mini",
+    "scannedAt": "2026-06-29T19:30:00.000Z",
+    "mode": "full",
+    "sourcesUsed": ["npm-audit", "osv-dev"]
+  },
+  "steps": [
+    { "name": "scan-project", "status": "done", "durationMs": 3240 },
+    { "name": "compress-advisories", "status": "done", "durationMs": 2143 },
+    { "name": "analyze-source", "status": "done", "durationMs": 7088 }
+  ],
+  "totalDurationMs": 12471
+}

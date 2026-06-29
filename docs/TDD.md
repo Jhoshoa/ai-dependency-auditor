@@ -1,6 +1,6 @@
 # Technical Design Document — AI Dependency Auditor
 
-## 1. Resumen Ejecutivo
+## 1. Resumen
 
 **AI Dependency Auditor** es una herramienta CLI que audita vulnerabilidades en
 dependencias de npm utilizando inteligencia artificial para reducir falsos
