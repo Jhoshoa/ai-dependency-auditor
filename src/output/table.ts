@@ -138,24 +138,71 @@ export const formatTable = (auditReport: AuditReport): string => {
   lines.push(pc.dim("Severity Breakdown (from advisory sources):"));
   lines.push(`  ${sevParts.join(" | ")}\n`);
 
-  lines.push(pc.dim("Classification Summary:"));
-  lines.push(`  ${pc.red(`● Real: ${used.length}`)}  ${pc.green(`○ False Positives: ${fps.length}`)}  ${pc.dim(`? Unknown: ${unknown.length}`)}\n`);
+  // Count actionable: USED with real severity (not NONE)
+  const realHigh = used.filter(r => r.advisory.severity === "HIGH" || r.advisory.severity === "CRITICAL");
+  const realMed = used.filter(r => r.advisory.severity === "MEDIUM");
+  const usedInfo = used.filter(r => r.advisory.severity === "NONE" || r.advisory.severity === "LOW");
+
+  // Unknown items with real severity that need attention
+  const unknownHigh = unknown.filter(r => r.advisory.severity === "HIGH" || r.advisory.severity === "CRITICAL");
+
+  // Group CANT_DETERMINE items by package for cleaner display
+  const unknownByPkg = new Map<string, { count: number; severity: string }>();
+  for (const r of unknown) {
+    const key = `${r.dependency.name}@${r.dependency.version}`;
+    const existing = unknownByPkg.get(key);
+    if (existing) {
+      existing.count++;
+    } else {
+      unknownByPkg.set(key, { count: 1, severity: r.advisory.severity });
+    }
+  }
 
   // Verdict
-  if (used.length > 0) {
-    const maxSev = used.reduce((a, b) => {
-      const order = ["NONE", "LOW", "MEDIUM", "HIGH", "CRITICAL"];
-      return order.indexOf(a.advisory.severity) > order.indexOf(b.advisory.severity) ? a : b;
-    });
-    lines.push(pc.red(`VERDICT: ${used.length} real vulnerabilit(ies) confirmed — highest severity: ${maxSev.advisory.severity}. Prioritize fixes.`));
-  } else if (fps.length > 0 && unknown.length === 0) {
-    lines.push(pc.green("VERDICT: No real vulnerabilities found. All advisories were false positives."));
-  } else if (unknown.length > 0 && fps.length === 0) {
-    lines.push(pc.dim("VERDICT: Could not determine usage for any advisory. Review manually or check source code."));
-  } else if (unknown.length > 0) {
-    lines.push(pc.yellow("VERDICT: No real vulnerabilities confirmed, but some could not be classified. Review unknown items manually."));
-  } else {
-    lines.push(pc.green("VERDICT: No real vulnerabilities found."));
+  const actionItems: string[] = [];
+
+  if (realHigh.length > 0) {
+    for (const r of realHigh) {
+      actionItems.push(`${pc.red(`${r.advisory.severity} ${r.dependency.name}@${r.dependency.version}`)} — vulnerable function used in source`);
+    }
+  }
+
+  if (realMed.length > 0) {
+    for (const r of realMed) {
+      actionItems.push(`${pc.yellow(`${r.advisory.severity} ${r.dependency.name}@${r.dependency.version}`)} — vulnerable function used in source`);
+    }
+  }
+
+  if (unknownHigh.length > 0) {
+    for (const r of unknownHigh) {
+      actionItems.push(`${pc.red(`? ${r.advisory.severity} ${r.dependency.name}@${r.dependency.version}`)} — could not verify usage, review manually`);
+    }
+  }
+
+  if (actionItems.length > 0) {
+    lines.push(pc.bold("Action Required:"));
+    for (const item of actionItems) {
+      lines.push(`  ${item}`);
+    }
+    lines.push("");
+  }
+
+  const infoCount = usedInfo.length;
+  const unknownCount = unknown.length - unknownHigh.length;
+
+  if (infoCount > 0) {
+    lines.push(pc.dim(`${infoCount} advisory(ies) are informational (package used but severity NONE/LOW).`));
+  }
+  if (fps.length > 0) {
+    lines.push(pc.green(`${fps.length} false positive(s) eliminated by AI analysis (not used in source).`));
+  }
+  if (unknownCount > 0) {
+    if (unknownByPkg.size <= 5) {
+      lines.push(pc.dim(`${unknownCount} advisory(ies) could not be classified: ${[...unknownByPkg.entries()].map(([pkg, info]) => `${pkg} (${info.count})`).join(", ")}.`));
+    } else {
+      const totalUnknown = unknownCount;
+      lines.push(pc.dim(`${totalUnknown} advisory(ies) could not be classified across ${unknownByPkg.size} packages.`));
+    }
   }
   lines.push("");
 

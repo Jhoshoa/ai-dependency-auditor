@@ -69,11 +69,10 @@ describe("formatTable", () => {
     expect(output).toContain("/test/project");
   });
 
-  it("shows classification summary counts", () => {
+  it("shows action required section for real vulnerabilities", () => {
     const output = formatTable(mockReport());
-    expect(output).toContain("Real: 1");
-    expect(output).toContain("False Positives: 1");
-    expect(output).toContain("Unknown: 0");
+    expect(output).toContain("Action Required");
+    expect(output).toContain("CRITICAL lodash@4.17.20");
   });
 
   it("contains dependency details", () => {
@@ -98,10 +97,9 @@ describe("formatTable", () => {
     expect(output).toContain("No vulnerabilities found");
   });
 
-  it("shows verdict and false positive count", () => {
+  it("shows false positives eliminated", () => {
     const output = formatTable(mockReport());
-    expect(output).toContain("VERDICT");
-    expect(output).toContain("CRITICAL");
+    expect(output).toContain("false positive(s) eliminated");
   });
 
   it("shows LLM provider info in full mode", () => {

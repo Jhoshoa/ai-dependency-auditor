@@ -87,6 +87,11 @@ export const analyzeSourceUsage = async (
     return { usage: "USED", evidence: allEvidence, confidence: 1 };
   }
 
+  const isGenericAdvisory = functionNames.every(fn => fn === "general" || fn === "unknown" || fn === "vulnerable_function");
+  if (isGenericAdvisory) {
+    return { usage: "USED", evidence: allEvidence, confidence: 0.7 };
+  }
+
   const fileContext = sourceFiles
     .map(f => `--- ${f.path} ---\n${f.content.slice(0, 500)}`)
     .join("\n\n")
